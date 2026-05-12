@@ -1,0 +1,10 @@
+# torch is installed separately in Dockerfile with CPU-only index URL
+numpy
+pillow
+transformers
+tokenizers
+watchdog
+fastapi
+uvicorn[standard]
+aiofiles
+python-multipart
