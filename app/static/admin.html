@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Photo Tagger — Администрирование</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <style>
+    body { font-family: 'Inter', system-ui, sans-serif; }
+    .stat-card { transition: box-shadow .15s; }
+    .stat-card:hover { box-shadow: 0 4px 20px rgba(0,0,0,.08); }
+    .tag-chip { display: inline-flex; align-items: center; gap: 4px; background: #e0f2fe;
+                color: #0369a1; padding: 3px 10px; border-radius: 9999px; font-size: .85rem; }
+    .tag-chip button { line-height: 1; opacity: .6; }
+    .tag-chip button:hover { opacity: 1; color: #dc2626; }
+    #toast { position: fixed; bottom: 24px; right: 24px; z-index: 9999;
+             transition: opacity .3s; pointer-events: none; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+<!-- Navbar -->
+<nav class="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between">
+  <div class="flex items-center gap-3">
+    <svg class="w-7 h-7 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14
+           m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+    <span class="font-semibold text-lg text-gray-800">Photo Tagger</span>
+    <span class="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-medium">Администрирование</span>
+  </div>
+  <div class="flex gap-2">
+    <button onclick="triggerScan()"
+      class="flex items-center gap-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm
+             font-medium px-4 py-2 rounded-lg transition-colors">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+          d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0
+             0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+      </svg>
+      Запустить сканирование
+    </button>
+    <button onclick="loadAll()"
+      class="flex items-center gap-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700
+             text-sm font-medium px-4 py-2 rounded-lg transition-colors">
+      Обновить
+    </button>
+  </div>
+</nav>
+
+<main class="max-w-6xl mx-auto px-4 py-6 space-y-6">
+
+  <!-- Stats Section -->
+  <section>
+    <h2 class="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">Статистика</h2>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4" id="statsGrid">
+      <div class="stat-card bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 mb-1">Всего фото</p>
+        <p class="text-3xl font-bold text-gray-800" id="statTotal">—</p>
+        <p class="text-xs text-gray-400 mt-1">в каталоге</p>
+      </div>
+      <div class="stat-card bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 mb-1">Обработано</p>
+        <p class="text-3xl font-bold text-green-600" id="statProcessed">—</p>
+        <p class="text-xs text-gray-400 mt-1">за сессию</p>
+      </div>
+      <div class="stat-card bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 mb-1">Пропущено</p>
+        <p class="text-3xl font-bold text-yellow-500" id="statSkipped">—</p>
+        <p class="text-xs text-gray-400 mt-1">уже помечены</p>
+      </div>
+      <div class="stat-card bg-white rounded-xl border border-gray-200 p-5">
+        <p class="text-xs text-gray-500 mb-1">Ошибки</p>
+        <p class="text-3xl font-bold text-red-500" id="statErrors">—</p>
+        <p class="text-xs text-gray-400 mt-1 flex items-center gap-1">
+          Очередь:&nbsp;<span id="statQueue" class="font-semibold text-gray-600">—</span>
+        </p>
+      </div>
+    </div>
+    <!-- Progress bar -->
+    <div class="mt-3 bg-white rounded-xl border border-gray-200 p-4">
+      <div class="flex justify-between text-xs text-gray-500 mb-1">
+        <span>Прогресс обработки (кэш)</span>
+        <span id="progressLabel">—</span>
+      </div>
+      <div class="w-full bg-gray-100 rounded-full h-2">
+        <div id="progressBar" class="bg-blue-500 h-2 rounded-full transition-all duration-500" style="width:0%"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Config + Tags row -->
+  <div class="grid md:grid-cols-2 gap-6">
+
+    <!-- Configuration -->
+    <section class="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <h2 class="font-semibold text-gray-800 text-base">Конфигурация</h2>
+
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">
+          Каталог с фотографиями
+        </label>
+        <input id="cfgPhotoRoot" type="text" placeholder="/photos"
+          class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+                 focus:ring-2 focus:ring-blue-500" />
+        <p class="text-xs text-amber-600 mt-1 hidden" id="restartNote">
+          ⚠ Изменение вступит в силу после перезапуска контейнера.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Порог уверенности
+          </label>
+          <input id="cfgThreshold" type="number" min="0.01" max="0.99" step="0.01"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+                   focus:ring-2 focus:ring-blue-500" />
+          <p class="text-xs text-gray-400 mt-0.5">0.01 — 0.99</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Макс. тегов на фото
+          </label>
+          <input id="cfgMaxTags" type="number" min="1" max="50"
+            class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+                   focus:ring-2 focus:ring-blue-500" />
+          <p class="text-xs text-gray-400 mt-0.5">1 — 50</p>
+        </div>
+      </div>
+
+      <button onclick="saveConfig()"
+        class="w-full bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium
+               py-2 rounded-lg transition-colors">
+        Сохранить настройки
+      </button>
+    </section>
+
+    <!-- Tag Management -->
+    <section class="bg-white rounded-xl border border-gray-200 p-5 flex flex-col">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="font-semibold text-gray-800 text-base">Теги</h2>
+        <span class="text-xs text-gray-500"><span id="tagCount">0</span> тегов</span>
+      </div>
+
+      <div id="tagList" class="flex flex-wrap gap-2 flex-1 content-start min-h-[100px]
+                               border border-dashed border-gray-200 rounded-lg p-3 mb-3 overflow-y-auto"
+           style="max-height: 220px;">
+      </div>
+
+      <div class="flex gap-2">
+        <input id="newTagInput" type="text" placeholder="Новый тег..."
+          class="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none
+                 focus:ring-2 focus:ring-blue-500"
+          onkeydown="if(event.key==='Enter') addTag()" />
+        <button onclick="addTag()"
+          class="bg-gray-100 hover:bg-gray-200 text-gray-700 text-sm font-medium
+                 px-4 py-2 rounded-lg transition-colors">
+          + Добавить
+        </button>
+      </div>
+
+      <button onclick="saveTags()"
+        class="mt-3 w-full bg-green-600 hover:bg-green-700 text-white text-sm
+               font-medium py-2 rounded-lg transition-colors">
+        Сохранить теги
+      </button>
+    </section>
+  </div>
+
+  <!-- Tag Statistics Chart -->
+  <section class="bg-white rounded-xl border border-gray-200 p-5">
+    <div class="flex items-center justify-between mb-4">
+      <h2 class="font-semibold text-gray-800 text-base">Распределение тегов (сессия)</h2>
+      <span class="text-xs text-gray-400">Статистика с момента запуска сервиса</span>
+    </div>
+    <div id="chartWrap" class="relative" style="height: 280px;">
+      <canvas id="tagChart"></canvas>
+      <div id="chartEmpty" class="absolute inset-0 flex items-center justify-center text-gray-400 text-sm">
+        Нет данных — обработайте хотя бы одно фото
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Toast -->
+<div id="toast" class="opacity-0">
+  <div id="toastMsg" class="bg-gray-800 text-white text-sm px-4 py-2 rounded-lg shadow-lg"></div>
+</div>
+
+<script>
+let currentTags = [];
+let tagChart = null;
+
+// ---------- Toast ----------
+function toast(msg, isError = false) {
+  const el = document.getElementById('toast');
+  const msg_el = document.getElementById('toastMsg');
+  msg_el.textContent = msg;
+  msg_el.className = `text-white text-sm px-4 py-2 rounded-lg shadow-lg ${isError ? 'bg-red-600' : 'bg-gray-800'}`;
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; }, 3000);
+}
+
+// ---------- Stats ----------
+async function loadStats() {
+  try {
+    const r = await fetch('/api/admin/stats');
+    const d = await r.json();
+    document.getElementById('statTotal').textContent = d.total_photos.toLocaleString('ru');
+    document.getElementById('statProcessed').textContent = d.processed.toLocaleString('ru');
+    document.getElementById('statSkipped').textContent = d.skipped.toLocaleString('ru');
+    document.getElementById('statErrors').textContent = d.errors.toLocaleString('ru');
+    document.getElementById('statQueue').textContent = d.queue_size.toLocaleString('ru');
+
+    const cached = d.total_processed_cache;
+    const total = d.total_photos;
+    if (total > 0) {
+      const pct = Math.min(100, Math.round(cached / total * 100));
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressLabel').textContent =
+        `${cached.toLocaleString('ru')} / ${total.toLocaleString('ru')} (${pct}%)`;
+    } else {
+      document.getElementById('progressLabel').textContent = 'Нет фото';
+    }
+
+    renderChart(d.tag_counts || {});
+  } catch(e) {
+    console.error('loadStats', e);
+  }
+}
+
+function renderChart(tagCounts) {
+  const entries = Object.entries(tagCounts).sort((a,b) => b[1]-a[1]).slice(0, 20);
+  const isEmpty = entries.length === 0;
+  document.getElementById('chartEmpty').style.display = isEmpty ? 'flex' : 'none';
+  if (isEmpty) return;
+
+  const labels = entries.map(e => e[0]);
+  const values = entries.map(e => e[1]);
+  const colors = labels.map((_, i) => `hsl(${200 + i * 8}, 70%, 55%)`);
+
+  if (tagChart) {
+    tagChart.data.labels = labels;
+    tagChart.data.datasets[0].data = values;
+    tagChart.data.datasets[0].backgroundColor = colors;
+    tagChart.update();
+    return;
+  }
+
+  const ctx = document.getElementById('tagChart').getContext('2d');
+  tagChart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Кол-во фото',
+        data: values,
+        backgroundColor: colors,
+        borderRadius: 4,
+        borderSkipped: false,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+// ---------- Config ----------
+async function loadConfig() {
+  const r = await fetch('/api/admin/config');
+  const d = await r.json();
+  document.getElementById('cfgPhotoRoot').value = d.photo_root || '';
+  document.getElementById('cfgThreshold').value = d.score_threshold || 0.24;
+  document.getElementById('cfgMaxTags').value = d.max_tags || 10;
+}
+
+async function saveConfig() {
+  const photo_root = document.getElementById('cfgPhotoRoot').value.trim();
+  const score_threshold = parseFloat(document.getElementById('cfgThreshold').value);
+  const max_tags = parseInt(document.getElementById('cfgMaxTags').value);
+
+  if (!photo_root) { toast('Укажите каталог с фотографиями', true); return; }
+  if (isNaN(score_threshold) || score_threshold <= 0 || score_threshold >= 1) {
+    toast('Порог должен быть от 0.01 до 0.99', true); return;
+  }
+  if (isNaN(max_tags) || max_tags < 1) {
+    toast('Макс. тегов должен быть >= 1', true); return;
+  }
+
+  try {
+    const r = await fetch('/api/admin/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ photo_root, score_threshold, max_tags })
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.detail || 'Ошибка сохранения', true); return; }
+    toast('Настройки сохранены');
+    if (d.restart_required) {
+      document.getElementById('restartNote').classList.remove('hidden');
+    } else {
+      document.getElementById('restartNote').classList.add('hidden');
+    }
+  } catch(e) {
+    toast('Ошибка: ' + e.message, true);
+  }
+}
+
+// ---------- Tags ----------
+async function loadTags() {
+  const r = await fetch('/tags');
+  currentTags = await r.json();
+  renderTags();
+}
+
+function renderTags() {
+  const list = document.getElementById('tagList');
+  list.innerHTML = '';
+  currentTags.forEach((tag, i) => {
+    const chip = document.createElement('span');
+    chip.className = 'tag-chip';
+    chip.innerHTML = `${escHtml(tag)}<button title="Удалить" onclick="removeTag(${i})">✕</button>`;
+    list.appendChild(chip);
+  });
+  document.getElementById('tagCount').textContent = currentTags.length;
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function removeTag(index) {
+  currentTags.splice(index, 1);
+  renderTags();
+}
+
+function addTag() {
+  const input = document.getElementById('newTagInput');
+  const val = input.value.trim();
+  if (!val) return;
+  if (currentTags.includes(val)) { toast('Тег уже существует', true); return; }
+  currentTags.push(val);
+  renderTags();
+  input.value = '';
+  input.focus();
+}
+
+async function saveTags() {
+  if (currentTags.length === 0) { toast('Список тегов не может быть пустым', true); return; }
+  try {
+    const r = await fetch('/tags', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tags: currentTags })
+    });
+    const d = await r.json();
+    if (!r.ok) { toast(d.detail || 'Ошибка сохранения тегов', true); return; }
+    currentTags = d.tags;
+    renderTags();
+    toast(`Теги сохранены (${currentTags.length} шт.)`);
+  } catch(e) {
+    toast('Ошибка: ' + e.message, true);
+  }
+}
+
+// ---------- Scan ----------
+async function triggerScan() {
+  try {
+    await fetch('/scan', { method: 'POST' });
+    toast('Сканирование запущено');
+    setTimeout(loadStats, 1500);
+  } catch(e) {
+    toast('Ошибка запуска сканирования', true);
+  }
+}
+
+// ---------- Init ----------
+async function loadAll() {
+  await Promise.all([loadStats(), loadConfig(), loadTags()]);
+}
+
+loadAll();
+setInterval(loadStats, 10000);
+</script>
+</body>
+</html>

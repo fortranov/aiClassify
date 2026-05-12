@@ -71,6 +71,8 @@ class Scanner:
         self._queue: queue.Queue[str] = queue.Queue()
         self._stop = threading.Event()
         self._stats = {"processed": 0, "skipped": 0, "errors": 0}
+        self._tag_counts: dict[str, int] = {}
+        self._tag_counts_lock = threading.Lock()
         cache.init()
 
     # ------------------------------------------------------------------
@@ -78,7 +80,9 @@ class Scanner:
     # ------------------------------------------------------------------
 
     def get_stats(self) -> dict:
-        return {**self._stats, "queue_size": self._queue.qsize()}
+        with self._tag_counts_lock:
+            tag_counts = dict(sorted(self._tag_counts.items(), key=lambda x: x[1], reverse=True))
+        return {**self._stats, "queue_size": self._queue.qsize(), "tag_counts": tag_counts}
 
     def trigger_full_scan(self) -> None:
         threading.Thread(target=self._initial_scan, daemon=True, name="full-scan").start()
@@ -147,6 +151,9 @@ class Scanner:
                 ok = self.exiftool.write_tags(filepath, tags)
                 if ok:
                     log.info("Tagged %s → %s", filepath, tags)
+                    with self._tag_counts_lock:
+                        for tag in tags:
+                            self._tag_counts[tag] = self._tag_counts.get(tag, 0) + 1
                 else:
                     log.warning("ExifTool write failed for %s", filepath)
             else:
