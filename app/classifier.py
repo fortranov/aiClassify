@@ -26,6 +26,8 @@ class Classifier:
         self._tags: list[str] = []
         self._tag_embeddings: Optional[torch.Tensor] = None
         self._tags_mtime: float = 0.0
+        self._score_threshold: float = SCORE_THRESHOLD
+        self._max_tags: int = MAX_TAGS
         self._load_tags()
 
     # ------------------------------------------------------------------
@@ -91,6 +93,12 @@ class Classifier:
     def get_tags(self) -> list[str]:
         return list(self._tags)
 
+    def update_settings(self, score_threshold: float = None, max_tags: int = None) -> None:
+        if score_threshold is not None:
+            self._score_threshold = score_threshold
+        if max_tags is not None:
+            self._max_tags = max_tags
+
     # ------------------------------------------------------------------
     # Inference
     # ------------------------------------------------------------------
@@ -113,10 +121,10 @@ class Classifier:
             matched = [
                 (self._tags[i], float(scores[i]))
                 for i in range(len(self._tags))
-                if scores[i] >= SCORE_THRESHOLD
+                if scores[i] >= self._score_threshold
             ]
             matched.sort(key=lambda x: x[1], reverse=True)
-            return [tag for tag, _ in matched[:MAX_TAGS]]
+            return [tag for tag, _ in matched[:self._max_tags]]
 
         except Exception as exc:
             log.error("classify_image failed for %s: %s", image_path, exc)
